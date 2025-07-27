@@ -9,12 +9,17 @@ const PORT = 5000;
 
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const REDIRECT_URI = "http://localhost:5000/api/auth/google/callback";
+const REDIRECT_URI = "https://talkportbackend.vercel.app/api/auth/google/callback";
+
 
 // 🔄 Use let instead of const
 let connectedAccounts = []; // Array of { email, messages }
 
-app.use(cors({ origin: "http://localhost:5173", credentials: true }));
+app.use(cors({
+  origin: "https://talkportfrontend.vercel.app",
+  credentials: true
+}));
+
 
 // Google OAuth login URL
 app.get("/api/auth/google", (req, res) => {
@@ -62,7 +67,7 @@ app.get("/api/auth/google/callback", async (req, res) => {
       console.log("ℹ️ Account already connected:", email);
     }
 
-    res.redirect("http://localhost:5173/dashboard");
+    res.redirect("https://talkportfrontend.vercel.app/dashboard");
   } catch (err) {
     console.error("❌ Auth error:", err.response?.data || err.message);
     res.status(500).send("Authentication or Gmail access failed.");
