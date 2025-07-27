@@ -9,16 +9,22 @@ const PORT = 5000;
 
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const REDIRECT_URI = "https://talkportbackend.vercel.app/api/auth/google/callback";
+const REDIRECT_URI = process.env.REDIRECT_URI || "http://localhost:5000/api/auth/google/callback";
+
 
 
 // 🔄 Use let instead of const
 let connectedAccounts = []; // Array of { email, messages }
 
 app.use(cors({
-  origin: "https://talkportfrontend.vercel.app",
+  origin: [
+    "http://localhost:5173",             // Vite dev
+    "http://localhost:3000",             // CRA dev (if you're using it)
+    "https://talkportfrontend.vercel.app"
+  ],
   credentials: true
 }));
+
 
 
 // Google OAuth login URL
@@ -44,6 +50,11 @@ app.get("/", (req, res) => {
 app.get("/api/auth/google/callback", async (req, res) => {
   const { code } = req.query;
 
+  if (!code) {
+    console.error("❌ No code received in callback.");
+    return res.status(400).send("Missing authorization code.");
+  }
+
   try {
     const oauth2Client = new google.auth.OAuth2(
       CLIENT_ID,
@@ -51,28 +62,36 @@ app.get("/api/auth/google/callback", async (req, res) => {
       REDIRECT_URI
     );
 
+    console.log("🔁 Exchanging code for tokens...");
     const { tokens } = await oauth2Client.getToken(code);
+    console.log("✅ Tokens received:", tokens);
+
     oauth2Client.setCredentials(tokens);
 
     const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+
+    console.log("👤 Fetching user info...");
     const { data: userInfo } = await oauth2.userinfo.get();
+    console.log("✅ User info:", userInfo);
 
     const email = userInfo.email;
+
+    console.log("📩 Fetching emails...");
     const messages = await fetchEmails(oauth2Client);
+    console.log("✅ Emails fetched:", messages.length);
 
     if (!connectedAccounts.find(acc => acc.email === email)) {
       connectedAccounts.push({ email, messages });
-      console.log("✅ Connected Account Added:", email, "Messages:", messages.length);
-    } else {
-      console.log("ℹ️ Account already connected:", email);
+      console.log("✅ Connected Account Added:", email);
     }
 
     res.redirect("https://talkportfrontend.vercel.app/dashboard");
   } catch (err) {
-    console.error("❌ Auth error:", err.response?.data || err.message);
+    console.error("❌ Auth or Gmail error:", err.response?.data || err.message || err);
     res.status(500).send("Authentication or Gmail access failed.");
   }
 });
+
 
 // API to get all connected email accounts
 app.get("/api/emails", (req, res) => {
