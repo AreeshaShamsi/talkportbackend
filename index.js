@@ -31,6 +31,10 @@ app.get("/api/auth/google", (req, res) => {
   res.redirect(redirectUrl);
 });
 
+app.get("/", (req, res) => {
+  res.send("API is running 🚀");
+});
+
 // Google OAuth Callback — handles login and stores multiple accounts
 app.get("/api/auth/google/callback", async (req, res) => {
   const { code } = req.query;
