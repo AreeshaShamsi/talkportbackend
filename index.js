@@ -85,7 +85,12 @@ app.get("/api/auth/google/callback", async (req, res) => {
       console.log("✅ Connected Account Added:", email);
     }
 
-    res.redirect("https://talkportfrontend.vercel.app/dashboard");
+     const redirectUrl =
+    req.hostname === "localhost"
+      ? "http://localhost:5173/inbox"
+      : "https://talkportfrontend.vercel.app/inbox";
+
+  res.redirect(redirectUrl);
   } catch (err) {
     console.error("❌ Auth or Gmail error:", err.response?.data || err.message || err);
     res.status(500).send("Authentication or Gmail access failed.");
