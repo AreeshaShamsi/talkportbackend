@@ -10,9 +10,6 @@ const PORT = process.env.PORT || 5000;
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 
-// 🔄 Use this in /auth/google route instead of here
-// const REDIRECT_URI = process.env.REDIRECT_URI || "http://localhost:5000/api/auth/google/callback";
-
 let connectedAccounts = []; // Array of { email, messages }
 
 app.use(cors({
@@ -31,10 +28,12 @@ app.get("/", (req, res) => {
 
 // 🔐 Google OAuth Login
 app.get("/api/auth/google", (req, res) => {
-  const redirectUri =
-    req.hostname === "localhost"
-      ? "http://localhost:5000/api/auth/google/callback"
-      : "https://talkportbackend.vercel.app/api/auth/google/callback";
+  const isLocal =
+    req.headers.host?.includes("localhost") || req.headers.host?.includes("127.0.0.1");
+
+  const redirectUri = isLocal
+    ? "http://localhost:5000/api/auth/google/callback"
+    : "https://talkportbackend.vercel.app/api/auth/google/callback";
 
   const scope = [
     "https://www.googleapis.com/auth/userinfo.email",
@@ -58,10 +57,12 @@ app.get("/api/auth/google/callback", async (req, res) => {
     return res.status(400).send("Missing authorization code.");
   }
 
-  const redirectUri =
-    req.hostname === "localhost"
-      ? "http://localhost:5000/api/auth/google/callback"
-      : "https://talkportbackend.vercel.app/api/auth/google/callback";
+  const isLocal =
+    req.headers.host?.includes("localhost") || req.headers.host?.includes("127.0.0.1");
+
+  const redirectUri = isLocal
+    ? "http://localhost:5000/api/auth/google/callback"
+    : "https://talkportbackend.vercel.app/api/auth/google/callback";
 
   try {
     const oauth2Client = new google.auth.OAuth2(
@@ -83,10 +84,9 @@ app.get("/api/auth/google/callback", async (req, res) => {
       connectedAccounts.push({ email, messages });
     }
 
-    const frontendRedirect =
-      req.hostname === "localhost"
-        ? "http://localhost:5173/inbox"
-        : "https://talkportfrontend.vercel.app/inbox";
+    const frontendRedirect = isLocal
+      ? "http://localhost:5173/inbox"
+      : "https://talkportfrontend.vercel.app/inbox";
 
     res.redirect(frontendRedirect);
   } catch (err) {
@@ -118,10 +118,29 @@ async function fetchEmails(oauth2Client) {
 
   const res = await gmail.users.messages.list({
     userId: "me",
-    maxResults: 20
+    maxResults: 100
   });
 
   if (!res.data.messages) return [];
+
+  const getBody = (payload) => {
+    // If the body is directly in the payload
+    if (payload.body && payload.body.data) {
+      return Buffer.from(payload.body.data, 'base64').toString('utf-8');
+    }
+    // If the body is in parts
+    if (payload.parts && payload.parts.length) {
+      for (const part of payload.parts) {
+        if (part.mimeType === "text/html" && part.body && part.body.data) {
+          return Buffer.from(part.body.data, 'base64').toString('utf-8');
+        }
+        if (part.mimeType === "text/plain" && part.body && part.body.data) {
+          return Buffer.from(part.body.data, 'base64').toString('utf-8');
+        }
+      }
+    }
+    return "";
+  };
 
   const messages = await Promise.all(
     res.data.messages.map(async msg => {
@@ -130,16 +149,38 @@ async function fetchEmails(oauth2Client) {
         id: msg.id
       });
 
-      const headers = msgDetail.data.payload.headers || [];
-
+      const headers = msgDetail.data.payload?.headers || [];
       const getHeader = name =>
         headers.find(h => h.name === name)?.value || "";
+
+      // Get both plain and html body if available
+      let textPlain = "";
+      let textHtml = "";
+
+      if (msgDetail.data.payload) {
+        // Try to get both plain and html parts
+        if (msgDetail.data.payload.parts && msgDetail.data.payload.parts.length) {
+          for (const part of msgDetail.data.payload.parts) {
+            if (part.mimeType === "text/plain" && part.body && part.body.data) {
+              textPlain = Buffer.from(part.body.data, 'base64').toString('utf-8');
+            }
+            if (part.mimeType === "text/html" && part.body && part.body.data) {
+              textHtml = Buffer.from(part.body.data, 'base64').toString('utf-8');
+            }
+          }
+        } else if (msgDetail.data.payload.body && msgDetail.data.payload.body.data) {
+          // If no parts, try to get the body directly
+          textPlain = Buffer.from(msgDetail.data.payload.body.data, 'base64').toString('utf-8');
+        }
+      }
 
       return {
         subject: getHeader("Subject") || "(No Subject)",
         from: getHeader("From"),
         date: getHeader("Date"),
-        snippet: msgDetail.data.snippet || ""
+        snippet: msgDetail.data.snippet || "",
+        textPlain,
+        textHtml
       };
     })
   );
